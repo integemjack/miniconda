@@ -74,19 +74,34 @@ if exist requirements.txt (
     )
     echo Dependencies installed successfully.
 ) else (
-    echo requirements.txt file not found, skipping dependency installation.
+    echo requirements.txt file not found, installing basic dependencies...
+    pip install numpy pandas matplotlib
+    if !errorlevel! neq 0 (
+        echo Failed to install basic dependencies.
+        exit /b 1
+    )
+)
+
+:: Set main script to run
+set MAIN_SCRIPT=main.py
+if "%1"=="simple" set MAIN_SCRIPT=main_simple.py
+if not exist %MAIN_SCRIPT% (
+    if exist main_simple.py (
+        set MAIN_SCRIPT=main_simple.py
+        echo Using main_simple.py instead...
+    )
 )
 
 :: Run Python script
-echo Running Python script...
-if exist main.py (
-    python main.py
+echo Running Python script: %MAIN_SCRIPT%
+if exist %MAIN_SCRIPT% (
+    python %MAIN_SCRIPT%
     if !errorlevel! neq 0 (
         echo Failed to run script.
         exit /b 1
     )
 ) else (
-    echo main.py file not found.
+    echo No Python script found. Please create main.py or main_simple.py
     exit /b 1
 )
 

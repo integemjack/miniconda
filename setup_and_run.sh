@@ -68,15 +68,26 @@ if [ -f requirements.txt ]; then
     pip install -r requirements.txt
     echo "Dependencies installed successfully."
 else
-    echo "requirements.txt file not found, skipping dependency installation."
+    echo "requirements.txt file not found, installing basic dependencies..."
+    pip install numpy pandas matplotlib
+fi
+
+# Set main script to run
+MAIN_SCRIPT="main.py"
+if [ "$1" == "simple" ]; then
+    MAIN_SCRIPT="main_simple.py"
+fi
+if [ ! -f "$MAIN_SCRIPT" ] && [ -f "main_simple.py" ]; then
+    MAIN_SCRIPT="main_simple.py"
+    echo "Using main_simple.py instead..."
 fi
 
 # Run Python script
-echo "Running Python script..."
-if [ -f main.py ]; then
-    python main.py
+echo "Running Python script: $MAIN_SCRIPT"
+if [ -f "$MAIN_SCRIPT" ]; then
+    python "$MAIN_SCRIPT"
 else
-    echo "main.py file not found."
+    echo "No Python script found. Please create main.py or main_simple.py"
     exit 1
 fi
 
