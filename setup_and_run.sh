@@ -69,7 +69,7 @@ if [ -f requirements.txt ]; then
     echo "Dependencies installed successfully."
 else
     echo "requirements.txt file not found, installing basic dependencies..."
-    pip install numpy pandas matplotlib
+    pip install numpy pandas matplotlib bleak
 fi
 
 # Set main script to run

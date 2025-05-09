@@ -75,7 +75,7 @@ if exist requirements.txt (
     echo Dependencies installed successfully.
 ) else (
     echo requirements.txt file not found, installing basic dependencies...
-    pip install numpy pandas matplotlib
+    pip install numpy pandas matplotlib bleak
     if !errorlevel! neq 0 (
         echo Failed to install basic dependencies.
         exit /b 1
