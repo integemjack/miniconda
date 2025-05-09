@@ -3,6 +3,12 @@
 # Enable error handling
 set -e
 
+# Store command line arguments before any conda commands
+USE_SIMPLE=0
+if [[ "$1" == "simple" ]]; then
+    USE_SIMPLE=1
+fi
+
 echo "Checking if Miniconda is installed..."
 
 # Check if Miniconda is already installed
@@ -45,23 +51,23 @@ else
     rm miniconda_installer.sh
 fi
 
-# Initialize conda for this script
-source "$HOME/miniconda3/bin/activate"
+# Initialize conda for this script - use eval to avoid parameter parsing issues
+eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
 
-# Check if environment exists
+# Check if environment exists - use explicit environment name to avoid confusion
 echo "Checking Python environment..."
-if $CONDA_PATH env list | grep -q "py311"; then
+if conda env list | grep -q "py311"; then
     echo "Environment py311 already exists."
 else
     echo "Creating Python 3.11 environment..."
     # Create environment with explicit name (avoid using first argument as env name)
-    $CONDA_PATH create -y -n py311 python=3.11
+    conda create -y -n py311 python=3.11
     echo "Environment created successfully."
 fi
 
-# Activate environment
+# Activate environment - use conda activate directly after hook initialization
 echo "Activating Python environment..."
-source "$HOME/miniconda3/bin/activate" py311
+conda activate py311
 
 # Install dependencies
 echo "Installing dependencies..."
@@ -73,13 +79,7 @@ else
     pip install numpy pandas matplotlib bleak
 fi
 
-# Set main script to run - use explicit variable for script selection
-USE_SIMPLE=0
-if [ "$1" = "simple" ]; then
-    USE_SIMPLE=1
-fi
-
-# Select script to run
+# Select script to run based on stored variable
 MAIN_SCRIPT="main.py"
 if [ $USE_SIMPLE -eq 1 ]; then
     MAIN_SCRIPT="main_simple.py"

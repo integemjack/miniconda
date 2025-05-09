@@ -26,15 +26,16 @@ This repository contains scripts to automatically set up a Miniconda environment
    ```
    chmod +x setup_and_run.sh
    ```
-4. Run the script:
+4. Run the script (recommended method to avoid conda issues):
    ```
-   ./setup_and_run.sh
+   bash ./setup_and_run.sh
    ```
-5. For simple mode, ensure you use quotes around the parameter:
+5. For simple mode, use:
    ```
-   ./setup_and_run.sh "simple"
+   bash ./setup_and_run.sh simple
    ```
-   This prevents conda from interpreting "simple" as an environment name.
+   
+   > ⚠️ **IMPORTANT**: Always use `bash ./setup_and_run.sh simple` instead of `./setup_and_run.sh simple` to prevent conda from misinterpreting "simple" as an environment name.
    
 6. The script will:
    - Check if Miniconda is installed, if not, download and install it
@@ -65,10 +66,17 @@ The validation ensures that the scripts work correctly across different platform
 
 - **Matplotlib Issues**: If you encounter errors related to matplotlib, make sure your environment includes all required dependencies. The scripts automatically install matplotlib and other dependencies.
   
-- **Parameter Parsing Issue**: When running the macOS script with the "simple" parameter, always use quotes (`./setup_and_run.sh "simple"`) to prevent conda from misinterpreting it as an environment name.
+- **macOS conda Activation Issues**: If you encounter `EnvironmentNameNotFound` errors, always use `bash ./setup_and_run.sh simple` instead of directly running the script with `./setup_and_run.sh simple`.
 
 - **Missing Dependencies**: If the scripts fail to install dependencies, try running them again or manually install the required packages:
   ```
   conda activate py311
   pip install numpy pandas matplotlib bleak
+  ```
+
+- **Bleak Version Detection**: Unlike many Python packages, the bleak module doesn't have a `__version__` attribute. If you need to check its version, use the following code instead:
+  ```python
+  import importlib.metadata
+  bleak_version = importlib.metadata.version("bleak")
+  print(f"Bleak version: {bleak_version}")
   ``` 
