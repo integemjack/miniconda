@@ -5,11 +5,15 @@ This repository contains scripts to automatically set up a Miniconda environment
 ## Windows Users
 
 1. Double-click the `setup_and_run.bat` file to run the script
-2. The script will:
+2. You can also run in simple mode:
+   ```
+   setup_and_run.bat simple
+   ```
+3. The script will:
    - Check if Miniconda is installed, if not, download and install it
    - Create a Python 3.11 environment named `py311`
    - Install dependencies from `requirements.txt`
-   - Run the `main.py` script
+   - Run the `main.py` script (or `main_simple.py` in simple mode)
 
 ## macOS Users
 
@@ -26,11 +30,17 @@ This repository contains scripts to automatically set up a Miniconda environment
    ```
    ./setup_and_run.sh
    ```
-5. The script will:
+5. For simple mode, ensure you use quotes around the parameter:
+   ```
+   ./setup_and_run.sh "simple"
+   ```
+   This prevents conda from interpreting "simple" as an environment name.
+   
+6. The script will:
    - Check if Miniconda is installed, if not, download and install it
    - Create a Python 3.11 environment named `py311`
    - Install dependencies from `requirements.txt`
-   - Run the `main.py` script
+   - Run the `main.py` script (or `main_simple.py` in simple mode)
 
 ## Note for Apple Silicon (M1/M2) Mac Users
 
@@ -49,4 +59,16 @@ To run the validation manually:
 2. Select the "Test Miniconda Environment Setup" workflow
 3. Click "Run workflow"
 
-The validation ensures that the scripts work correctly across different platforms. 
+The validation ensures that the scripts work correctly across different platforms.
+
+## Troubleshooting
+
+- **Matplotlib Issues**: If you encounter errors related to matplotlib, make sure your environment includes all required dependencies. The scripts automatically install matplotlib and other dependencies.
+  
+- **Parameter Parsing Issue**: When running the macOS script with the "simple" parameter, always use quotes (`./setup_and_run.sh "simple"`) to prevent conda from misinterpreting it as an environment name.
+
+- **Missing Dependencies**: If the scripts fail to install dependencies, try running them again or manually install the required packages:
+  ```
+  conda activate py311
+  pip install numpy pandas matplotlib bleak
+  ``` 

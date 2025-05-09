@@ -35,3 +35,4 @@ env/
 .vscode/
 *.swp
 *.swo 
+test_plot.png

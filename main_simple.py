@@ -43,6 +43,12 @@ except ImportError:
 
 try:
     import bleak
-    print(f"Bleak version: {bleak.__version__}")
+    # Bleak does not have __version__ attribute, use alternative method
+    import importlib.metadata
+    try:
+        bleak_version = importlib.metadata.version("bleak")
+        print(f"Bleak version: {bleak_version}")
+    except:
+        print("Bleak is installed but version could not be determined")
 except ImportError:
     print("Bleak is not installed") 

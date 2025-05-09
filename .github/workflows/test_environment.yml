@@ -45,7 +45,7 @@ jobs:
         run: chmod +x setup_and_run.sh
         
       - name: Run macOS Setup Script
-        run: ./setup_and_run.sh simple
+        run: ./setup_and_run.sh "simple"
         
       - name: Verify Python Environment
         run: |

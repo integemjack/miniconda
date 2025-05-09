@@ -54,6 +54,7 @@ if $CONDA_PATH env list | grep -q "py311"; then
     echo "Environment py311 already exists."
 else
     echo "Creating Python 3.11 environment..."
+    # Create environment with explicit name (avoid using first argument as env name)
     $CONDA_PATH create -y -n py311 python=3.11
     echo "Environment created successfully."
 fi
@@ -72,11 +73,18 @@ else
     pip install numpy pandas matplotlib bleak
 fi
 
-# Set main script to run
+# Set main script to run - use explicit variable for script selection
+USE_SIMPLE=0
+if [ "$1" = "simple" ]; then
+    USE_SIMPLE=1
+fi
+
+# Select script to run
 MAIN_SCRIPT="main.py"
-if [ "$1" == "simple" ]; then
+if [ $USE_SIMPLE -eq 1 ]; then
     MAIN_SCRIPT="main_simple.py"
 fi
+
 if [ ! -f "$MAIN_SCRIPT" ] && [ -f "main_simple.py" ]; then
     MAIN_SCRIPT="main_simple.py"
     echo "Using main_simple.py instead..."
