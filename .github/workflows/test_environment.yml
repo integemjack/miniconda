@@ -10,7 +10,7 @@ on:
 jobs:
   test-windows:
     runs-on: windows-latest
-    timeout-minutes: 15  # Increased timeout
+    timeout-minutes: 5  # Increased timeout
     steps:
       - uses: actions/checkout@v3
       
@@ -22,11 +22,15 @@ jobs:
         shell: cmd
         run: setup_and_run.bat simple
 
+      - name: Verify Python main.py
+        shell: cmd
+        run: setup_and_run.bat
+
   test-macos:
     # GitHub Actions doesn't have Apple Silicon runners yet,
     # but we can still test the script's architecture detection logic
     runs-on: ${{matrix.os}}
-    timeout-minutes: 15  # Increased timeout
+    timeout-minutes: 5  # Increased timeout
 
     strategy:
       fail-fast: false
@@ -45,3 +49,7 @@ jobs:
         
       - name: Verify Python Environment
         run: bash ./setup_and_run.sh simple
+
+      - name: Verify Python main.py
+        run: bash ./setup_and_run.sh
+
