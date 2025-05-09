@@ -16,7 +16,7 @@ jobs:
       
       - name: Run Windows Setup Script
         shell: cmd
-        run: setup_and_run.bat
+        run: setup_and_run.bat simple
         
       - name: Verify Python Environment
         shell: cmd
@@ -45,7 +45,7 @@ jobs:
         run: chmod +x setup_and_run.sh
         
       - name: Run macOS Setup Script
-        run: ./setup_and_run.sh
+        run: ./setup_and_run.sh simple
         
       - name: Verify Python Environment
         run: |
