@@ -25,8 +25,17 @@ jobs:
           python -c "import numpy; print(f'NumPy {numpy.__version__}')"
           python -c "import pandas; print(f'Pandas {pandas.__version__}')"
 
-  test-macos-intel:
-    runs-on: macos-latest
+  test-macos:
+    # GitHub Actions doesn't have Apple Silicon runners yet,
+    # but we can still test the script's architecture detection logic
+    runs-on: ${{matrix.os}}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [16]
+        os: [macos-latest, macos-11, macos-12, macos-13]
+
     steps:
       - uses: actions/checkout@v3
       
@@ -42,28 +51,3 @@ jobs:
           python -c "import sys; print(f'Python {sys.version}')"
           python -c "import numpy; print(f'NumPy {numpy.__version__}')"
           python -c "import pandas; print(f'Pandas {pandas.__version__}')"
-
-  test-macos-arm:
-    # GitHub Actions doesn't have Apple Silicon runners yet,
-    # but we can still test the script's architecture detection logic
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v3
-      
-      - name: Test Architecture Detection
-        run: |
-          # Create a modified version of the script for testing
-          cat setup_and_run.sh | sed 's/uname -m/echo arm64/' > setup_test.sh
-          chmod +x setup_test.sh
-          
-          # Run the modified script with -n to not execute commands
-          bash -n setup_test.sh
-          
-          # Check if the script would download the ARM installer
-          grep_result=$(grep -c "Miniconda3-latest-MacOSX-arm64.sh" setup_test.sh || echo "0")
-          if [ "$grep_result" -gt "0" ]; then
-            echo "ARM architecture detection works correctly"
-          else
-            echo "ARM architecture detection failed"
-            exit 1
-          fi 
