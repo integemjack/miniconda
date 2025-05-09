@@ -369,13 +369,6 @@ def draw_scene():
 
 def update(frame):
     global rotor_angle, state, game_start_time, best_time
-    
-    # 检查是否需要自动退出
-    if auto_exit_enabled and time.time() - program_start_time >= auto_exit_delay:
-        print("程序运行5秒，自动退出")
-        cleanup_resources()
-        plt.close(fig)
-        sys.exit(0)
         
     # Bluetooth override
     if bt_mode=="Bluetooth" and is_connected:
@@ -418,8 +411,5 @@ ani = FuncAnimation(fig, update, interval=50)
 threading.Thread(target=thread_scan_devices,daemon=True).start()
 fig.canvas.mpl_connect('close_event', lambda e: (cleanup_resources(), sys.exit(0)))
 fig.canvas.mpl_connect('key_press_event', lambda e: plt.close(fig) if e.key=='escape' else None)
-
-# 在状态栏显示自动退出信息
-fig.text(0.5, 0.01, f"程序将在 {auto_exit_delay} 秒后自动退出", ha='center', color='red')
 
 plt.show()
