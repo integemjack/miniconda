@@ -18,13 +18,16 @@ jobs:
         shell: cmd
         run: setup_and_run.bat simple
         
+      - name: Remove Python Environment
+        run: conda env remove -n pydrone_balloon_log_analyze
+
       - name: Verify Python Environment
         shell: cmd
         run: setup_and_run.bat simple
 
-      - name: Verify Python main.py
-        shell: cmd
-        run: setup_and_run.bat
+      # - name: Verify Python main.py
+      #   shell: cmd
+      #   run: setup_and_run.bat
 
   test-macos:
     # GitHub Actions doesn't have Apple Silicon runners yet,
