@@ -19,7 +19,9 @@ jobs:
         run: setup_and_run.bat simple
         
       - name: Remove Python Environment
-        run: conda env remove -n pydrone_balloon_log_analyze
+        run: |
+          call "%USERPROFILE%\miniconda3\Scripts\activate.bat"
+          conda env remove -n pydrone_balloon_log_analyze
 
       - name: Verify Python Environment
         shell: cmd
@@ -51,7 +53,9 @@ jobs:
         run: bash ./setup_and_run.sh simple
           
       - name: Remove Python Environment
-        run: conda env remove -n pydrone_balloon_log_analyze
+        run: |
+          eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
+          conda env remove -n pydrone_balloon_log_analyze
 
       - name: Verify Python Environment
         run: bash ./setup_and_run.sh simple
