@@ -2,7 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import numpy as np
 import matplotlib
 from matplotlib import font_manager
@@ -54,6 +54,14 @@ class DataPlotter:
         self.root.title("Data Visualization Tool")
         self.root.geometry("1500x900")  # Increase width to accommodate longer attribute names
         
+        # Initialize log directory
+        self.log_directory = None
+        
+        # First, let user select log directory
+        if not self.select_log_directory():
+            self.root.destroy()
+            return
+        
         # Show progress window
         progress_window = tk.Toplevel(root)
         progress_window.title("Loading...")
@@ -93,7 +101,7 @@ class DataPlotter:
             progress_window.update()
         except FileNotFoundError:
             progress_window.destroy()
-            messagebox.showerror("Error", "Cannot find combined.csv file!\nPlease ensure log_*.csv files exist in the current directory.")
+            messagebox.showerror("Error", "Cannot find combined.csv file!\nPlease ensure log_*.csv files exist in the selected directory.")
             self.root.destroy()
             return
         except Exception as e:
@@ -106,8 +114,8 @@ class DataPlotter:
         self.columns = [col for col in self.df.columns if col != 'time']
         
         # Get source file information
-        self.source_files = glob.glob("log_*.csv")
-        self.source_files.sort(key=lambda f: int(f.split('_')[-1].split('.')[0]))
+        self.source_files = glob.glob(os.path.join(self.log_directory, "log_*.csv"))
+        self.source_files.sort(key=lambda f: int(os.path.basename(f).split('_')[-1].split('.')[0]))
         
         # Initialize checkbox variables
         self.checkbox_vars = {}
@@ -120,6 +128,52 @@ class DataPlotter:
         # Close progress window
         progress_window.destroy()
     
+    def select_log_directory(self):
+        """Let user select the directory containing log files"""
+        # First try current directory
+        current_dir_files = glob.glob("log_*.csv")
+        logs_dir_files = glob.glob("logs/log_*.csv")
+        
+        if current_dir_files or logs_dir_files:
+            # Ask user if they want to use current directory or select another
+            choice = messagebox.askyesnocancel(
+                "Select Log Directory", 
+                f"Found {len(current_dir_files)} log files in current directory and {len(logs_dir_files)} log files in logs/ directory.\n\n"
+                "Click 'Yes' to use current directory\n"
+                "Click 'No' to select another directory\n"
+                "Click 'Cancel' to exit program"
+            )
+            
+            if choice is None:  # Cancel
+                return False
+            elif choice:  # Yes - use current directory
+                if current_dir_files:
+                    self.log_directory = "."
+                else:
+                    self.log_directory = "logs"
+                return True
+            # else: No - let user select directory
+        
+        # Let user select directory
+        selected_dir = filedialog.askdirectory(
+            title="Select Directory Containing Log Files",
+            initialdir="."
+        )
+        
+        if not selected_dir:
+            messagebox.showwarning("Warning", "No directory selected, program will exit.")
+            return False
+        
+        # Check if selected directory contains log files
+        log_files = glob.glob(os.path.join(selected_dir, "log_*.csv"))
+        if not log_files:
+            messagebox.showerror("Error", f"No log_*.csv files found in selected directory!\nDirectory: {selected_dir}")
+            return self.select_log_directory()  # Let user select again
+        
+        self.log_directory = selected_dir
+        messagebox.showinfo("Success", f"Selected directory: {selected_dir}\nFound {len(log_files)} log files")
+        return True
+
     def create_tooltip(self, widget, text):
         """Create a tooltip for a widget"""
         ToolTip(widget, text)
@@ -127,12 +181,12 @@ class DataPlotter:
     def combine_csv_files(self):
         """Combine all log_*.csv files into combined.csv"""
         # Get and sort all CSV files based on the timestamp in the filename
-        csv_files = glob.glob("logs/log_*.csv")
+        csv_files = glob.glob(os.path.join(self.log_directory, "log_*.csv"))
         
         if not csv_files:
-            raise FileNotFoundError("No log_*.csv files found in the current directory")
+            raise FileNotFoundError(f"No log_*.csv files found in directory: {self.log_directory}")
         
-        csv_files.sort(key=lambda f: int(f.split('_')[-1].split('.')[0]))
+        csv_files.sort(key=lambda f: int(os.path.basename(f).split('_')[-1].split('.')[0]))
         
         print(f"Found {len(csv_files)} CSV files to combine:")
         for file in csv_files:
@@ -157,6 +211,8 @@ class DataPlotter:
         # File menu
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Select Log Directory", command=self.change_log_directory)
+        file_menu.add_separator()
         file_menu.add_command(label="Refresh Data", command=self.refresh_data)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.quit)
@@ -174,6 +230,21 @@ class DataPlotter:
         control_frame = ttk.LabelFrame(main_frame, text="Control Panel", padding=10)
         control_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         control_frame.config(width=280)  # Set minimum width
+        
+        # Current directory info
+        dir_frame = ttk.LabelFrame(control_frame, text="Current Log Directory", padding=5)
+        dir_frame.pack(pady=(0, 10), fill=tk.X)
+        
+        dir_text = os.path.abspath(self.log_directory)
+        if len(dir_text) > 30:
+            dir_text = "..." + dir_text[-27:]
+        
+        dir_label = ttk.Label(dir_frame, text=dir_text, font=("Arial", 9), 
+                             foreground="blue", wraplength=250)
+        dir_label.pack()
+        
+        change_dir_btn = ttk.Button(dir_frame, text="Change Directory", command=self.change_log_directory)
+        change_dir_btn.pack(pady=(5, 0), fill=tk.X)
         
         # Title
         title_label = ttk.Label(control_frame, text="Select attributes to display:", 
@@ -244,11 +315,11 @@ class DataPlotter:
         
         # Show first few files and total count
         if len(self.source_files) <= 4:
-            files_text = "\n".join([f"{i:2d}. {file}" for i, file in enumerate(self.source_files, 1)])
+            files_text = "\n".join([f"{i:2d}. {os.path.basename(file)}" for i, file in enumerate(self.source_files, 1)])
         else:
-            files_text = f"1. {self.source_files[0]}\n2. {self.source_files[1]}\n"
+            files_text = f"1. {os.path.basename(self.source_files[0])}\n2. {os.path.basename(self.source_files[1])}\n"
             files_text += f"... ({len(self.source_files)-3} more files)\n"
-            files_text += f"{len(self.source_files):2d}. {self.source_files[-1]}"
+            files_text += f"{len(self.source_files):2d}. {os.path.basename(self.source_files[-1])}"
         
         files_label = ttk.Label(files_frame, text=files_text, font=("Arial", 7), 
                                foreground="gray", justify=tk.LEFT)
@@ -359,8 +430,8 @@ class DataPlotter:
             self.df = pd.read_csv("combined.csv")
             
             # Update source files info
-            self.source_files = glob.glob("log_*.csv")
-            self.source_files.sort(key=lambda f: int(f.split('_')[-1].split('.')[0]))
+            self.source_files = glob.glob(os.path.join(self.log_directory, "log_*.csv"))
+            self.source_files.sort(key=lambda f: int(os.path.basename(f).split('_')[-1].split('.')[0]))
             
             # Close progress dialog
             progress.destroy()
@@ -376,15 +447,87 @@ class DataPlotter:
                 progress.destroy()
             messagebox.showerror("Error", f"Error refreshing data: {str(e)}")
     
+    def change_log_directory(self):
+        """Change the log directory and reload data"""
+        new_dir = filedialog.askdirectory(
+            title="Select Directory Containing Log Files",
+            initialdir=self.log_directory
+        )
+        
+        if not new_dir:
+            return
+        
+        # Check if selected directory contains log files
+        log_files = glob.glob(os.path.join(new_dir, "log_*.csv"))
+        if not log_files:
+            messagebox.showerror("Error", f"No log_*.csv files found in selected directory!\nDirectory: {new_dir}")
+            return
+        
+        # Update directory and reload data
+        self.log_directory = new_dir
+        
+        try:
+            # Show progress
+            progress = tk.Toplevel(self.root)
+            progress.title("Reloading...")
+            progress.geometry("250x80")
+            progress.resizable(False, False)
+            progress.grab_set()
+            progress.transient(self.root)
+            
+            # Center the dialog
+            progress.update_idletasks()
+            x = (progress.winfo_screenwidth() // 2) - (250 // 2)
+            y = (progress.winfo_screenheight() // 2) - (80 // 2)
+            progress.geometry(f"250x80+{x}+{y}")
+            
+            label = ttk.Label(progress, text="Reloading data...", font=("Arial", 10))
+            label.pack(pady=25)
+            progress.update()
+            
+            # Re-combine files and reload data
+            self.combine_csv_files()
+            self.df = pd.read_csv("combined.csv")
+            
+            # Update columns and source files
+            self.columns = [col for col in self.df.columns if col != 'time']
+            self.source_files = glob.glob(os.path.join(self.log_directory, "log_*.csv"))
+            self.source_files.sort(key=lambda f: int(os.path.basename(f).split('_')[-1].split('.')[0]))
+            
+            # Update checkbox variables
+            self.checkbox_vars = {}
+            for col in self.columns:
+                self.checkbox_vars[col] = tk.BooleanVar(value=True)
+            
+            progress.destroy()
+            
+            # Recreate UI
+            for widget in self.root.winfo_children():
+                if isinstance(widget, ttk.Frame):
+                    widget.destroy()
+            
+            self.setup_ui()
+            self.update_plot()
+            
+            messagebox.showinfo("Success", f"Successfully switched to new directory and reloaded data!\n"
+                                      f"Directory: {new_dir}\n"
+                                      f"Loaded {len(self.df)} data points from {len(self.source_files)} files.")
+            
+        except Exception as e:
+            if 'progress' in locals():
+                progress.destroy()
+            messagebox.showerror("Error", f"Error switching directory: {str(e)}")
+    
     def show_about(self):
         """Show about dialog"""
-        about_text = """Data Visualization Tool v2.0
+        about_text = """Data Visualization Tool v2.1
 
 This tool automatically combines log_*.csv files and creates 
 interactive time series plots with selectable attributes.
 
 Features:
 • Automatic CSV file combination
+• Support for selecting log directories
 • Interactive plot with zoom/pan
 • Attribute selection with checkboxes
 • Data refresh capability
