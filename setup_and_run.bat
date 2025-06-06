@@ -101,6 +101,26 @@ if !errorlevel! neq 0 (
     )
 )
 
+:: Verify environment activation
+echo Verifying environment activation...
+python -c "import sys; print('Python path:', sys.executable)" 2>nul
+if !errorlevel! neq 0 (
+    echo Error: Python is not accessible. Environment activation may have failed.
+    exit /b 1
+)
+
+:: Check if we're in the correct environment
+for /f "tokens=*" %%i in ('python -c "import sys; import os; print(os.path.basename(os.path.dirname(sys.executable)))" 2^>nul') do set CURRENT_ENV=%%i
+if /i "!CURRENT_ENV!" neq "pydrone_balloon_log_analyze" (
+    echo Warning: Current environment appears to be "!CURRENT_ENV!" instead of "pydrone_balloon_log_analyze"
+    echo Continuing anyway...
+) else (
+    echo Environment activation verified: !CURRENT_ENV!
+)
+
+python -c "import sys; print('Python version:', sys.version.split()[0])"
+echo Environment is ready!
+
 :: Install dependencies
 echo Installing dependencies...
 if exist requirements.txt (

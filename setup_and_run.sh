@@ -69,6 +69,25 @@ fi
 echo "Activating Python environment..."
 conda activate pydrone_balloon_log_analyze
 
+# Verify environment activation
+echo "Verifying environment activation..."
+if ! python -c "import sys; print('Python path:', sys.executable)" 2>/dev/null; then
+    echo "Error: Python is not accessible. Environment activation may have failed."
+    exit 1
+fi
+
+# Check if we're in the correct environment
+CURRENT_ENV=$(python -c "import sys; import os; print(os.path.basename(os.path.dirname(sys.executable)))" 2>/dev/null)
+if [ "$CURRENT_ENV" != "pydrone_balloon_log_analyze" ]; then
+    echo "Warning: Current environment appears to be '$CURRENT_ENV' instead of 'pydrone_balloon_log_analyze'"
+    echo "Continuing anyway..."
+else
+    echo "Environment activation verified: $CURRENT_ENV"
+fi
+
+python -c "import sys; print('Python version:', sys.version.split()[0])"
+echo "Environment is ready!"
+
 # Install dependencies
 echo "Installing dependencies..."
 if [ -f requirements.txt ]; then

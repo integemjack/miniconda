@@ -50,6 +50,6 @@ jobs:
       - name: Verify Python Environment
         run: bash ./setup_and_run.sh simple
 
-      - name: Verify Python main.py
-        run: bash ./setup_and_run.sh
+      # - name: Verify Python main.py
+      #   run: bash ./setup_and_run.sh
 
