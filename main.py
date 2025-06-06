@@ -127,7 +127,7 @@ class DataPlotter:
     def combine_csv_files(self):
         """Combine all log_*.csv files into combined.csv"""
         # Get and sort all CSV files based on the timestamp in the filename
-        csv_files = glob.glob("log_*.csv")
+        csv_files = glob.glob("logs/log_*.csv")
         
         if not csv_files:
             raise FileNotFoundError("No log_*.csv files found in the current directory")
