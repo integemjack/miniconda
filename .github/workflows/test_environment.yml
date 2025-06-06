@@ -46,7 +46,10 @@ jobs:
       - name: Run macOS Setup Script
         # Use proper execution method to avoid conda environment parsing issues
         run: bash ./setup_and_run.sh simple
-        
+          
+      - name: Remove Python Environment
+        run: conda env remove -n pydrone_balloon_log_analyze
+
       - name: Verify Python Environment
         run: bash ./setup_and_run.sh simple
 
