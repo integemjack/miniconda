@@ -56,18 +56,18 @@ eval "$($HOME/miniconda3/bin/conda shell.bash hook)"
 
 # Check if environment exists - use explicit environment name to avoid confusion
 echo "Checking Python environment..."
-if conda env list | grep -q "py311"; then
-    echo "Environment py311 already exists."
+if conda env list | grep -q "pydrone_balloon_log_analyze"; then
+    echo "Environment pydrone_balloon_log_analyze already exists."
 else
     echo "Creating Python 3.11 environment..."
     # Create environment with explicit name (avoid using first argument as env name)
-    conda create -y -n py311 python=3.11
+    conda create -y -n pydrone_balloon_log_analyze python=3.11
     echo "Environment created successfully."
 fi
 
 # Activate environment - use conda activate directly after hook initialization
 echo "Activating Python environment..."
-conda activate py311
+conda activate pydrone_balloon_log_analyze
 
 # Install dependencies
 echo "Installing dependencies..."

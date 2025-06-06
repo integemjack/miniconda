@@ -37,3 +37,4 @@ env/
 *.swo 
 test_plot.png
 *.csv
+logs.zip
