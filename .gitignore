@@ -36,3 +36,4 @@ env/
 *.swp
 *.swo 
 test_plot.png
+*.csv

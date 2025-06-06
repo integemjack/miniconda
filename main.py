@@ -1,415 +1,421 @@
-import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.gridspec as gridspec
-import asyncio
-import threading
-import time
-import sys
-import signal
-from bleak import BleakClient, BleakScanner
-from matplotlib.widgets import Button, CheckButtons
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import tkinter as tk
+from tkinter import ttk, messagebox
+import numpy as np
+import matplotlib
+from matplotlib import font_manager
+import glob
+import os
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Simulation & control parameters
-dt = 0.1
-L = 2.0
-drone_body_radius = 1.5
-rotor_radius = 1.2
-base_speed = 10
-yaw_adjust_factor = 0.2
-k_p, k_r = 0.3, 0.3
-z_pitch, z_roll = 0.5, 0.5
+# Set font configuration
+plt.rcParams['font.sans-serif'] = ['Arial', 'DejaVu Sans', 'Liberation Sans']
+plt.rcParams['axes.unicode_minus'] = False
 
-# ─────────────────────────────────────────────────────────────────────────────
-# State holders
-state = {'x': 0.0, 'y': 0.0, 'z': 2.5, 'yaw': 0.0}
-rotor_angle = 0.0
+class ToolTip:
+    """Create a tooltip for a given widget"""
+    def __init__(self, widget, text='widget info'):
+        self.widget = widget
+        self.text = text
+        self.widget.bind("<Enter>", self.enter)
+        self.widget.bind("<Leave>", self.leave)
+        self.tipwindow = None
 
-# Game
-targets = []
-coord_texts = []
-game_start_time = None
-best_time = None
-difficult_mode = False
+    def enter(self, event=None):
+        self.showtip()
 
-# Bluetooth
-NOTIFY_UUID = "00002a6e-0000-1000-8000-00805f9b34fb"
-bt_devices = []
-bt_client = None
-is_connected = False
-bt_data_lock = threading.Lock()
-bt_knob1_x = bt_knob1_y = bt_knob2_x = bt_knob2_y = 0.0
-bt_mode = "Manual"
-bt_status_text = "Bluetooth: Not connected"
+    def leave(self, event=None):
+        self.hidetip()
 
-# 自动退出程序的标志
-program_start_time = time.time()
-auto_exit_enabled = True
-auto_exit_delay = 5  # 5秒后自动退出
+    def showtip(self):
+        if self.tipwindow or not self.text:
+            return
+        x, y, cx, cy = self.widget.bbox("insert")
+        x = x + self.widget.winfo_rootx() + 25
+        y = y + cy + self.widget.winfo_rooty() + 25
+        self.tipwindow = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry("+%d+%d" % (x, y))
+        label = tk.Label(tw, text=self.text, justify=tk.LEFT,
+                      background="#ffffe0", relief=tk.SOLID, borderwidth=1,
+                      font=("tahoma", "8", "normal"))
+        label.pack(ipadx=1)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Cleanup on exit
-def cleanup_resources():
-    global bt_client, is_connected
-    is_connected = False
-    if bt_client:
+    def hidetip(self):
+        tw = self.tipwindow
+        self.tipwindow = None
+        if tw:
+            tw.destroy()
+
+class DataPlotter:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Data Visualization Tool")
+        self.root.geometry("1500x900")  # Increase width to accommodate longer attribute names
+        
+        # Show progress window
+        progress_window = tk.Toplevel(root)
+        progress_window.title("Loading...")
+        progress_window.geometry("300x100")
+        progress_window.resizable(False, False)
+        progress_window.grab_set()
+        
+        # Center the progress window
+        progress_window.transient(root)
+        progress_window.update_idletasks()
+        x = (progress_window.winfo_screenwidth() // 2) - (300 // 2)
+        y = (progress_window.winfo_screenheight() // 2) - (100 // 2)
+        progress_window.geometry(f"300x100+{x}+{y}")
+        
+        progress_label = ttk.Label(progress_window, text="Combining CSV files...", font=("Arial", 10))
+        progress_label.pack(pady=30)
+        
+        # Update the window
+        progress_window.update()
+        
+        # First, combine CSV files
         try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(bt_client.disconnect())
-            loop.close()
+            self.combine_csv_files()
+            progress_label.config(text="Loading data...")
+            progress_window.update()
+        except Exception as e:
+            progress_window.destroy()
+            messagebox.showerror("Error", f"Error combining CSV files: {str(e)}")
+            self.root.destroy()
+            return
+        
+        # Read data
+        try:
+            self.df = pd.read_csv("combined.csv")
+            print(f"Successfully loaded data with {len(self.df)} rows")
+            progress_label.config(text="Setting up interface...")
+            progress_window.update()
+        except FileNotFoundError:
+            progress_window.destroy()
+            messagebox.showerror("Error", "Cannot find combined.csv file!\nPlease ensure log_*.csv files exist in the current directory.")
+            self.root.destroy()
+            return
+        except Exception as e:
+            progress_window.destroy()
+            messagebox.showerror("Error", f"Error reading file: {str(e)}")
+            self.root.destroy()
+            return
+        
+        # Get all columns except time
+        self.columns = [col for col in self.df.columns if col != 'time']
+        
+        # Get source file information
+        self.source_files = glob.glob("log_*.csv")
+        self.source_files.sort(key=lambda f: int(f.split('_')[-1].split('.')[0]))
+        
+        # Initialize checkbox variables
+        self.checkbox_vars = {}
+        for col in self.columns:
+            self.checkbox_vars[col] = tk.BooleanVar(value=True)
+        
+        self.setup_ui()
+        self.update_plot()
+        
+        # Close progress window
+        progress_window.destroy()
+    
+    def create_tooltip(self, widget, text):
+        """Create a tooltip for a widget"""
+        ToolTip(widget, text)
+    
+    def combine_csv_files(self):
+        """Combine all log_*.csv files into combined.csv"""
+        # Get and sort all CSV files based on the timestamp in the filename
+        csv_files = glob.glob("log_*.csv")
+        
+        if not csv_files:
+            raise FileNotFoundError("No log_*.csv files found in the current directory")
+        
+        csv_files.sort(key=lambda f: int(f.split('_')[-1].split('.')[0]))
+        
+        print(f"Found {len(csv_files)} CSV files to combine:")
+        for file in csv_files:
+            print(f"  - {file}")
+        
+        # Read each file into a DataFrame and concatenate them
+        try:
+            combined_df = pd.concat((pd.read_csv(f) for f in csv_files), ignore_index=True)
+        except Exception as e:
+            raise Exception(f"Error reading CSV files: {str(e)}")
+        
+        # Write the combined DataFrame to a CSV file
+        combined_df.to_csv("combined.csv", index=False)
+        
+        print(f"Combined CSV file 'combined.csv' has been created with {len(combined_df)} rows")
+    
+    def setup_ui(self):
+        # Create menu bar
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+        
+        # File menu
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Refresh Data", command=self.refresh_data)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.quit)
+        
+        # Help menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="About", command=self.show_about)
+        
+        # Create main frame
+        main_frame = ttk.Frame(self.root)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Left control panel
+        control_frame = ttk.LabelFrame(main_frame, text="Control Panel", padding=10)
+        control_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
+        control_frame.config(width=280)  # Set minimum width
+        
+        # Title
+        title_label = ttk.Label(control_frame, text="Select attributes to display:", 
+                               font=("Arial", 12, "bold"))
+        title_label.pack(pady=(0, 10))
+        
+        # Create scrollable frame for checkboxes
+        checkboxes_container = ttk.Frame(control_frame)
+        checkboxes_container.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        
+        canvas = tk.Canvas(checkboxes_container, height=300)
+        scrollbar = ttk.Scrollbar(checkboxes_container, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Create checkboxes
+        for col in self.columns:
+            cb = ttk.Checkbutton(
+                scrollable_frame,
+                text=f"{col}",
+                variable=self.checkbox_vars[col],
+                command=self.update_plot,
+                width=25  # Set wider width for checkbox text
+            )
+            cb.pack(anchor=tk.W, pady=2, padx=5, fill=tk.X)
+            
+            # Add tooltip for long attribute names
+            self.create_tooltip(cb, f"Attribute: {col}")
+        
+        canvas.pack(fill="both", expand=True, side="left")
+        scrollbar.pack(fill="y", side="right")
+        
+        # Select all/deselect all buttons
+        button_frame = ttk.Frame(control_frame)
+        button_frame.pack(pady=10, fill=tk.X)
+        
+        select_all_btn = ttk.Button(button_frame, text="Select All", command=self.select_all)
+        select_all_btn.pack(pady=2, fill=tk.X)
+        
+        deselect_all_btn = ttk.Button(button_frame, text="Deselect All", command=self.deselect_all)
+        deselect_all_btn.pack(pady=2, fill=tk.X)
+        
+        # Add data information
+        info_frame = ttk.LabelFrame(control_frame, text="Data Information", padding=5)
+        info_frame.pack(pady=10, fill=tk.X)
+        
+        info_text = f"Total data points: {len(self.df)}\n"
+        info_text += f"Time range: {self.df['time'].min():.2f} - {self.df['time'].max():.2f}\n"
+        info_text += f"Available attributes: {len(self.columns)}\n"
+        info_text += f"Source files: {len(self.source_files)} files"
+        
+        info_label = ttk.Label(info_frame, text=info_text, font=("Arial", 9))
+        info_label.pack()
+        
+        # Add source files list
+        files_frame = ttk.Frame(info_frame)
+        files_frame.pack(pady=(5, 0), fill=tk.X)
+        
+        files_title = ttk.Label(files_frame, text="Source Files:", font=("Arial", 8, "bold"))
+        files_title.pack(anchor=tk.W)
+        
+        # Show first few files and total count
+        if len(self.source_files) <= 4:
+            files_text = "\n".join([f"{i:2d}. {file}" for i, file in enumerate(self.source_files, 1)])
+        else:
+            files_text = f"1. {self.source_files[0]}\n2. {self.source_files[1]}\n"
+            files_text += f"... ({len(self.source_files)-3} more files)\n"
+            files_text += f"{len(self.source_files):2d}. {self.source_files[-1]}"
+        
+        files_label = ttk.Label(files_frame, text=files_text, font=("Arial", 7), 
+                               foreground="gray", justify=tk.LEFT)
+        files_label.pack(anchor=tk.W, pady=(2, 0))
+        
+        # Right chart area
+        plot_frame = ttk.LabelFrame(main_frame, text="Data Chart", padding=5)
+        plot_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
+        
+        # Create matplotlib figure
+        self.fig, self.ax = plt.subplots(figsize=(12, 8))
+        self.canvas = FigureCanvasTkAgg(self.fig, master=plot_frame)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Add toolbar
+        toolbar_frame = ttk.Frame(plot_frame)
+        toolbar_frame.pack(fill=tk.X)
+        
+        from matplotlib.backends.backend_tkagg import NavigationToolbar2Tk
+        toolbar = NavigationToolbar2Tk(self.canvas, toolbar_frame)
+        toolbar.update()
+    
+    def select_all(self):
+        for var in self.checkbox_vars.values():
+            var.set(True)
+        self.update_plot()
+    
+    def deselect_all(self):
+        for var in self.checkbox_vars.values():
+            var.set(False)
+        self.update_plot()
+    
+    def update_plot(self):
+        # Clear current figure
+        self.ax.clear()
+        
+        # Get selected columns
+        selected_columns = [col for col, var in self.checkbox_vars.items() if var.get()]
+        
+        if not selected_columns:
+            self.ax.text(0.5, 0.5, 'Please select at least one attribute to display', 
+                        horizontalalignment='center', verticalalignment='center',
+                        transform=self.ax.transAxes, fontsize=16, 
+                        fontweight='bold', color='red')
+            self.canvas.draw()
+            return
+        
+        # Create color mapping
+        colors = plt.cm.Set1(np.linspace(0, 1, len(selected_columns)))
+        if len(selected_columns) > 9:
+            colors = plt.cm.tab20(np.linspace(0, 1, len(selected_columns)))
+        
+        # Plot selected data
+        for i, col in enumerate(selected_columns):
+            self.ax.plot(self.df['time'], self.df[col], 
+                        label=col, color=colors[i], linewidth=1.5, alpha=0.8)
+        
+        # Set figure properties
+        self.ax.set_xlabel('Time', fontsize=14, fontweight='bold')
+        self.ax.set_ylabel('Value', fontsize=14, fontweight='bold')
+        self.ax.set_title(f'Data Time Series Plot (Showing {len(selected_columns)} attributes)', 
+                         fontsize=16, fontweight='bold', pad=20)
+        
+        # Set legend
+        if len(selected_columns) <= 10:
+            self.ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
+        else:
+            self.ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', 
+                          fontsize=8, ncol=2)
+        
+        # Add grid
+        self.ax.grid(True, alpha=0.3, linestyle='--')
+        
+        # Beautify axes
+        self.ax.tick_params(axis='both', which='major', labelsize=10)
+        
+        # Auto adjust layout
+        self.fig.tight_layout()
+        
+        # Refresh canvas
+        self.canvas.draw()
+    
+    def refresh_data(self):
+        """Refresh data by re-combining CSV files and reloading"""
+        try:
+            # Show progress dialog
+            progress = tk.Toplevel(self.root)
+            progress.title("Refreshing...")
+            progress.geometry("250x80")
+            progress.resizable(False, False)
+            progress.grab_set()
+            progress.transient(self.root)
+            
+            # Center the dialog
+            progress.update_idletasks()
+            x = (progress.winfo_screenwidth() // 2) - (250 // 2)
+            y = (progress.winfo_screenheight() // 2) - (80 // 2)
+            progress.geometry(f"250x80+{x}+{y}")
+            
+            label = ttk.Label(progress, text="Refreshing data...", font=("Arial", 10))
+            label.pack(pady=25)
+            progress.update()
+            
+            # Re-combine files
+            self.combine_csv_files()
+            
+            # Reload data
+            self.df = pd.read_csv("combined.csv")
+            
+            # Update source files info
+            self.source_files = glob.glob("log_*.csv")
+            self.source_files.sort(key=lambda f: int(f.split('_')[-1].split('.')[0]))
+            
+            # Close progress dialog
+            progress.destroy()
+            
+            # Update the plot
+            self.update_plot()
+            
+            # Update info panel (need to recreate it)
+            messagebox.showinfo("Success", f"Data refreshed successfully!\nLoaded {len(self.df)} data points from {len(self.source_files)} files.")
+            
+        except Exception as e:
+            if 'progress' in locals():
+                progress.destroy()
+            messagebox.showerror("Error", f"Error refreshing data: {str(e)}")
+    
+    def show_about(self):
+        """Show about dialog"""
+        about_text = """Data Visualization Tool v2.0
+
+This tool automatically combines log_*.csv files and creates 
+interactive time series plots with selectable attributes.
+
+Features:
+• Automatic CSV file combination
+• Interactive plot with zoom/pan
+• Attribute selection with checkboxes
+• Data refresh capability
+• Export functionality
+
+Created for data analysis and visualization."""
+        
+        messagebox.showinfo("About", about_text)
+
+def main():
+    try:
+        root = tk.Tk()
+        
+        # Set window icon (if available)
+        try:
+            root.iconbitmap('icon.ico')
         except:
             pass
-
-signal.signal(signal.SIGINT, lambda s,f: (cleanup_resources(), sys.exit(0)))
-if sys.platform!='win32':
-    signal.signal(signal.SIGTERM, lambda s,f: (cleanup_resources(), sys.exit(0)))
-if sys.platform=='win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Knob for manual control
-class Knob:
-    def __init__(self, ax, radius=1.0):
-        self.ax = ax
-        self.radius = radius
-        self.value = np.array([0.0,0.0])
-        circle = plt.Circle((0,0),radius,fill=False,lw=2)
-        ax.add_patch(circle)
-        self.indicator, = ax.plot([0],[0],'ro',markersize=8)
-        self.active = False
-
-    def update(self, x, y):
-        if x is None or y is None: return
-        r = np.hypot(x,y)
-        if r>self.radius:
-            x,y = x*self.radius/r, y*self.radius/r
-        self.value = np.array([x,y])
-        self.indicator.set_data([x],[y])
-        self.ax.figure.canvas.draw()
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Dropdown & toolbar for Bluetooth
-class Dropdown:
-    def __init__(self, ax, width=0.4, height=0.05, x=0.5, y=0.05):
-        self.ax = ax; self.fig = ax.figure
-        self.items = []
-        self.selected_item = None
-        self.button = Button(plt.axes([x-width/2,y,width,height]),
-                             "Select Device", color='lightgoldenrodyellow')
-        self.button.on_clicked(self.toggle_menu)
-        self.menu_visible = False
-        self.menu_buttons = []
-
-    def set_items(self, items):
-        self.items = items
-        if self.menu_visible: self.show_menu()
-
-    def toggle_menu(self, event):
-        if self.menu_visible: self.hide_menu()
-        else: self.show_menu()
-
-    def show_menu(self):
-        self.hide_menu()
-        for i,item in enumerate(self.items):
-            y_pos = 0.05 + (i+1)*0.05
-            ax_i = plt.axes([0.5-0.2, y_pos, 0.4, 0.05])
-            btn = Button(ax_i, item, color='white')
-            btn.on_clicked(lambda evt, it=item: self.select(it))
-            self.menu_buttons.append((ax_i,btn))
-        self.menu_visible = True
-        self.fig.canvas.draw_idle()
-
-    def hide_menu(self):
-        for ax_i,btn in self.menu_buttons:
-            btn.disconnect_events()
-            self.fig.delaxes(ax_i)
-        self.menu_buttons.clear()
-        self.menu_visible = False
-        self.fig.canvas.draw_idle()
-
-    def select(self, item):
-        self.selected_item = item
-        self.button.label.set_text(item)
-        self.hide_menu()
-
-class ToolbarButton:
-    def __init__(self, ax, label, callback, x,y,width=0.1,height=0.05):
-        btn = Button(plt.axes([x,y,width,height]), label, color='lightblue')
-        btn.on_clicked(callback)
-        self.button = btn
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Bluetooth functions (from code2)
-async def scan_bluetooth_devices():
-    global bt_devices, bt_status_text
-    bt_status_text = "Scanning..."
-    try:
-        devices = await BleakScanner.discover()
-        bt_devices.clear()
-        for d in devices:
-            if d.name:
-                bt_devices.append({"name":d.name,"address":d.address})
-        bt_status_text = f"Found {len(bt_devices)} devices"
-        dropdown.set_items([d["name"] for d in bt_devices])
-    except Exception as e:
-        bt_status_text = f"Scan error: {e}"
-
-def thread_scan_devices():
-    asyncio.run(scan_bluetooth_devices())
-
-def connect_callback(event):
-    if not dropdown.selected_item:
-        print("Please select a device first")
-        return
-    for dev in bt_devices:
-        if dev["name"]==dropdown.selected_item:
-            threading.Thread(target=thread_connect_device, args=(dev,), daemon=True).start()
-            return
-
-async def connect_to_device(dev):
-    global bt_client, is_connected, bt_status_text, bt_mode
-    bt_status_text="Connecting..."
-    try:
-        client = BleakClient(dev["address"], timeout=10.0)
-        await client.connect()
-        if client.is_connected:
-            bt_client = client
-            is_connected = True
-            bt_status_text = "Connected"
-            await client.start_notify(NOTIFY_UUID, notification_handler)
-            bt_mode = "Bluetooth"
-            mode_button.button.label.set_text(f"Mode: {bt_mode}")
-            plt.draw()
-            while client.is_connected:
-                await asyncio.sleep(0.1)
-    except Exception as e:
-        bt_status_text=f"Conn error: {e}"
-        bt_client=None
-        is_connected=False
-
-def thread_connect_device(dev):
-    asyncio.run(connect_to_device(dev))
-
-def disconnect_callback(event):
-    threading.Thread(target=thread_disconnect_device, daemon=True).start()
-
-async def disconnect_device():
-    global bt_client, is_connected, bt_status_text, bt_mode
-    if not bt_client:
-        bt_status_text="No device"
-        return
-    is_connected=False
-    bt_mode="Manual"
-    mode_button.button.label.set_text(f"Mode: {bt_mode}")
-    plt.draw()
-    try: await bt_client.disconnect()
-    except: pass
-    bt_client=None
-    bt_status_text="Disconnected"
-    with bt_data_lock:
-        global bt_knob1_x, bt_knob1_y, bt_knob2_x, bt_knob2_y
-        bt_knob1_x=bt_knob1_y=bt_knob2_x=bt_knob2_y=0.0
-
-def thread_disconnect_device():
-    asyncio.run(disconnect_device())
-
-def notification_handler(sender, data):
-    global bt_knob1_x, bt_knob1_y, bt_knob2_x, bt_knob2_y
-    try:
-        text = data.decode('utf-8').strip()
-        if text.startswith('[') and text.endswith(']'):
-            parts = [p.strip() for p in text[1:-1].split(',')]
-            vals = [float(p) for p in parts if p]
-            while len(vals)<4: vals.append(0.0)
-            with bt_data_lock:
-                bt_knob2_x, bt_knob2_y = vals[0]/100, vals[1]/100
-                bt_knob1_x, bt_knob1_y = vals[2]/100, vals[3]/100
-    except:
-        pass
-
-def toggle_mode_callback(event):
-    global bt_mode, bt_status_text
-    if bt_mode=="Manual" and is_connected:
-        bt_mode="Bluetooth"
-        bt_status_text="Bluetooth mode"
-    else:
-        bt_mode="Manual"
-        bt_status_text="Manual mode"
-        knob1.update(0,0); knob2.update(0,0)
-    mode_button.button.label.set_text(f"Mode: {bt_mode}")
-    plt.draw()
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Build the figure
-fig = plt.figure(figsize=(12,10))
-gs = gridspec.GridSpec(2,2, height_ratios=[9,1], hspace=0.3)
-gs.update(bottom=0.2)
-
-ax3d = fig.add_subplot(gs[0,:], projection='3d')
-ax3d.set_xlim(-10,10); ax3d.set_ylim(-10,10); ax3d.set_zlim(-1,10)
-ax3d.set_xlabel('X'); ax3d.set_ylabel('Y'); ax3d.set_zlabel('Z')
-ax3d.set_title('Quadcopter Game + Bluetooth')
-
-elapsed_text = fig.text(0.02,0.95,'Time: 0.00s')
-best_text    = fig.text(0.02,0.90,'Best: --')
-drone_text   = fig.text(0.70,0.95,'Drone: (0.00,0.00,2.50)')
-
-ax_knob_left  = fig.add_subplot(gs[1,0])
-ax_knob_right = fig.add_subplot(gs[1,1])
-for ax in (ax_knob_left,ax_knob_right):
-    ax.set_xlim(-1,1); ax.set_ylim(-1,1)
-    ax.set_aspect('equal'); ax.set_xticks([]); ax.set_yticks([])
-ax_knob_left.set_title('Knob 2 (Pitch & Roll)')
-ax_knob_right.set_title('Knob 1 (Thrust & Yaw)')
-knob2 = Knob(ax_knob_left)
-knob1 = Knob(ax_knob_right)
-
-fig.canvas.mpl_connect('button_press_event',
-    lambda e: (setattr(knob1,'active',True), knob1.update(e.xdata,e.ydata))
-              if e.inaxes==knob1.ax and bt_mode=='Manual'
-              else (setattr(knob2,'active',True), knob2.update(e.xdata,e.ydata))
-              if e.inaxes==knob2.ax and bt_mode=='Manual' else None)
-fig.canvas.mpl_connect('motion_notify_event',
-    lambda e: knob1.update(e.xdata,e.ydata) if knob1.active else knob2.update(e.xdata,e.ydata) if knob2.active else None)
-fig.canvas.mpl_connect('button_release_event',
-    lambda e: (knob1.update(0,0), setattr(knob1,'active',False),
-               knob2.update(0,0), setattr(knob2,'active',False)))
-
-# Create Game UI
-btn_game_ax   = fig.add_axes([0.82,0.40,0.12,0.05])
-btn_game      = Button(btn_game_ax,   'Create Game')
-check_ax      = fig.add_axes([0.82,0.33,0.12,0.05])
-check_game    = CheckButtons(check_ax, ['Difficult'], [False])
-#check_game.on_clicked(lambda label: setattr(globals(), 'difficult_mode', not difficult_mode))
-def on_toggle(label):
-    global difficult_mode
-    difficult_mode = not difficult_mode
-
-check_game.on_clicked(on_toggle)
-
-def create_game(event):
-    global game_start_time, targets, coord_texts, state
-    for txt in coord_texts: txt.remove()
-    coord_texts.clear(); targets.clear()
-    state.update(x=0.0,y=0.0,z=2.5)
-    state['yaw'] = np.random.uniform(np.pi/2,3*np.pi/2) if difficult_mode else 0.0
-    xlim,ylim,zlim = ax3d.get_xlim(), ax3d.get_ylim(), ax3d.get_zlim()
-    for i in range(3):
-        while True:
-            tx = np.random.uniform(xlim[0]+1,xlim[1]-1)
-            ty = np.random.uniform(ylim[0]+1,ylim[1]-1)
-            tz = np.random.uniform(1,5)
-            if np.linalg.norm([tx-state['x'],ty-state['y'],tz-state['z']])>drone_body_radius:
-                break
-        targets.append((tx,ty,tz))
-        coord_texts.append(fig.text(0.02,0.80 - i*0.03,
-                                    f'T{i+1}: ({tx:.1f},{ty:.1f},{tz:.1f})'))
-    game_start_time = time.time()
-    elapsed_text.set_text('Time: 0.00s')
-
-btn_game.on_clicked(create_game)
-
-# Bluetooth panel
-ax_bt = fig.add_axes(plt.subplot2grid((10,1),(9,0),rowspan=1))
-ax_bt.axis('off')
-dropdown         = Dropdown(ax_bt)
-refresh_button   = ToolbarButton(ax_bt, "Refresh",   lambda e: threading.Thread(target=thread_scan_devices,daemon=True).start(), x=0.05, y=0.05)
-connect_button   = ToolbarButton(ax_bt, "Connect",   connect_callback, x=0.17, y=0.05)
-disconnect_button= ToolbarButton(ax_bt, "Disconnect", disconnect_callback, x=0.29, y=0.05)
-mode_button      = ToolbarButton(ax_bt, f"Mode: {bt_mode}", toggle_mode_callback, x=0.83, y=0.05)
-
-bt_status = ax_bt.text(0.5,0.15,bt_status_text,ha='center',transform=ax_bt.transAxes)
-
-# Drawing & animation
-def circle_points(center, radius, n=50):
-    θ = np.linspace(0,2*np.pi,n)
-    return (center[0]+radius*np.cos(θ),
-            center[1]+radius*np.sin(θ),
-            np.full_like(θ,center[2]))
-
-def draw_scene():
-    xlim,ylim,zlim = ax3d.get_xlim(),ax3d.get_ylim(),ax3d.get_zlim()
-    elev,azim = ax3d.elev,ax3d.azim
-    ax3d.cla()
-    ax3d.set_xlim(xlim); ax3d.set_ylim(ylim); ax3d.set_zlim(zlim)
-    ax3d.view_init(elev=elev,azim=azim)
-    for tx,ty,tz in targets:
-        ax3d.scatter(tx,ty,0, c='gray',marker='o',s=50,alpha=0.3)
-        ax3d.scatter(tx,ty,tz,c='magenta',marker='X',s=100)
-    x,y,z,yaw = state['x'],state['y'],state['z'],state['yaw']
-    ax3d.scatter(x,y,0,c='gray',marker='o',s=150,alpha=0.3)
-    ax3d.scatter(x,y,z,c='k',marker='o',s=100)
-    fx,fy = x-0.5*np.sin(yaw), y+0.5*np.cos(yaw)
-    ax3d.scatter(fx,fy,z,c='yellow',marker='o',s=150)
-    motors = [(( L/np.sqrt(2),  L/np.sqrt(2)),'A',1),
-              (( L/np.sqrt(2), -L/np.sqrt(2)),'B',-1),
-              ((-L/np.sqrt(2), -L/np.sqrt(2)),'A',1),
-              ((-L/np.sqrt(2),  L/np.sqrt(2)),'B',-1)]
-    R = np.array([[np.cos(yaw),-np.sin(yaw)],[np.sin(yaw),np.cos(yaw)]])
-    for (lx,ly),prop,spin in motors:
-        gp = R.dot([lx,ly]) + np.array([x,y])
-        mx,my = gp; rel=gp-np.array([x,y])
-        fwd = rel.dot([-np.sin(yaw),np.cos(yaw)])/L
-        rt  = rel.dot([ np.cos(yaw),np.sin(yaw)])/L
-        sf_yaw = (1-2*knob1.value[0]*yaw_adjust_factor) if prop=='A' else (1+2*knob1.value[0]*yaw_adjust_factor)
-        tilt   = 1-2*k_p*knob2.value[1]*fwd-2*k_r*knob2.value[0]*rt
-        sf     = sf_yaw*tilt
-        mz     = z - z_pitch*knob2.value[1]*fwd - z_roll*knob2.value[0]*rt
-        ax3d.plot([x,mx],[y,my],[z,mz],c='b')
-        cx,cy,cz = circle_points((mx,my,mz),rotor_radius)
-        ax3d.plot(cx,cy,cz,c='k')
-        ang = -spin*rotor_angle*sf
-        ll = rotor_radius
-        x1,y1 = mx-ll*np.cos(ang), my-ll*np.sin(ang)
-        x2,y2 = mx+ll*np.cos(ang), my+ll*np.sin(ang)
-        ax3d.plot([x1,x2],[y1,y2],[mz,mz],c=('red' if prop=='A' else 'green'),lw=3)
-
-def update(frame):
-    global rotor_angle, state, game_start_time, best_time
         
-    # Bluetooth override
-    if bt_mode=="Bluetooth" and is_connected:
-        with bt_data_lock:
-            k1x,k1y = bt_knob1_x,bt_knob1_y
-            k2x,k2y = bt_knob2_x,bt_knob2_y
-        knob1.update(k1x,k1y); knob2.update(k2x,k2y)
-        bt_status.set_text(bt_status_text)
-    # else manual knobs
-    k1x,k1y = knob1.value; k2x,k2y = knob2.value
+        app = DataPlotter(root)
+        
+        # Set close event
+        def on_closing():
+            if messagebox.askokcancel("Exit", "Are you sure you want to exit?"):
+                root.destroy()
+        
+        root.protocol("WM_DELETE_WINDOW", on_closing)
+        root.mainloop()
+        
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to start application: {str(e)}")
 
-    # physics
-    rs = base_speed*(1+k1y) if k1y>=0 else base_speed*(1+0.5*k1y)
-    rotor_angle += rs*dt
-    state['z'] += (rs/base_speed-1)*4*dt
-    state['yaw'] += (-k1x*(np.pi/8))*dt
-    dx,dy = 2*k2x*dt,2*k2y*dt
-    state['x'] += np.cos(state['yaw'])*dx - np.sin(state['yaw'])*dy
-    state['y'] += np.sin(state['yaw'])*dx + np.cos(state['yaw'])*dy
-
-    drone_text.set_text(f'Drone: ({state["x"]:.2f},{state["y"]:.2f},{state["z"]:.2f})')
-
-    # game logic
-    if game_start_time is not None:
-        elapsed = time.time()-game_start_time
-        elapsed_text.set_text(f'Time: {elapsed:.2f}s')
-        to_rm = [i for i,(tx,ty,tz) in enumerate(targets)
-                 if np.linalg.norm([state['x']-tx,state['y']-ty,state['z']-tz])<drone_body_radius]
-        for i in sorted(to_rm,reverse=True):
-            targets.pop(i); coord_texts.pop(i).remove()
-        if not targets:
-            if best_time is None or elapsed<best_time:
-                best_time=elapsed; best_text.set_text(f'Best: {best_time:.2f}s')
-            game_start_time=None
-
-    draw_scene()
-    return []
-
-ani = FuncAnimation(fig, update, interval=50)
-threading.Thread(target=thread_scan_devices,daemon=True).start()
-fig.canvas.mpl_connect('close_event', lambda e: (cleanup_resources(), sys.exit(0)))
-fig.canvas.mpl_connect('key_press_event', lambda e: plt.close(fig) if e.key=='escape' else None)
-
-plt.show()
+if __name__ == "__main__":
+    main() 
